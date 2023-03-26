@@ -1,5 +1,6 @@
 #include <iostream>
 #include <vector>
+#include <optional>
 
 #include <string.h>
 #include <unistd.h>
@@ -26,27 +27,30 @@ public:
     int sd;
 
     void set_server_path(std::string_view server_path);
-    void setup_socket();
+    std::optional<int> setup_socket();
     auto wait_socket();
     virtual ~SocketWrapper(); // TODO: Rule of five?
 };
 
 auto SocketWrapper::wait_socket()
 {
-    std::vector<int> v;
+    auto v = std::vector<int>{};
 
-    int rv = -1;
+    // fd_set our_sockets;
+    auto our_sockets = fd_set{};
 
-    fd_set our_sockets;
     FD_ZERO(&our_sockets);
     FD_SET(this->sd, &our_sockets);
     struct timeval timeout;
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
-    rv = select(this->sd + 1, &our_sockets, NULL, NULL, &timeout);
+
+    auto rv = select(this->sd + 1, &our_sockets, NULL, NULL, &timeout);
+
     if (rv == 0)
     {
         fmt::print("Waiting\n");
+        return v;
     }
 
     if (rv < 0)
@@ -71,7 +75,7 @@ void SocketWrapper::set_server_path(std::string_view server_path)
     this->server_path_ = std::string(server_path);
 }
 
-void SocketWrapper::setup_socket()
+std::optional<int> SocketWrapper::setup_socket()
 {
     auto rv = -1;
 
@@ -80,7 +84,7 @@ void SocketWrapper::setup_socket()
     if (sd < 0)
     {
         print_error("socket()", sd, errno);
-        return;
+        return {};
     }
 
     struct sockaddr_un serveraddr;
@@ -99,17 +103,19 @@ void SocketWrapper::setup_socket()
     if (rv < 0)
     {
         print_error("bind()", rv, errno);
-        return;
+        return {};
     }
 
     rv = listen(sd, 10);
     if (rv < 0)
     {
         print_error("listen()", rv, errno);
-        return;
+        return {};
     }
 
     this->sd = sd;
+
+    return sd;
 }
 
 SocketWrapper::~SocketWrapper()
@@ -157,9 +163,15 @@ auto setup_socket(const std::string& server_path)
 
 auto play_with_socket()
 {
-    SocketWrapper sw;
+    auto sw = SocketWrapper();
     sw.set_server_path("./stockmarket.socket");
-    sw.setup_socket();
+    auto sd_opt = sw.setup_socket();
+    if (!sd_opt)
+    {
+        fmt::print("Setup socket failed.");
+        return -1;
+    }
+    auto sd = *sd_opt;
 
     auto rv = -1;
 
@@ -167,6 +179,8 @@ auto play_with_socket()
 
     auto sd2 = -1;
 
+    // auto v = std::vector<int>{};
+    
     auto v = std::vector<int>{};
 
     while((v = sw.wait_socket()).size() == 0);
@@ -174,7 +188,8 @@ auto play_with_socket()
     for (auto &fd : v)
     {
         fmt::print("fd: {}\n", fd);
-        if (fd != sw.sd)
+        // if (fd != sw.sd)
+        if (fd != sd)
         {
             continue;
         }

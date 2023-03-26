@@ -67,7 +67,7 @@ int main(int, char**) {
          }
          bytesReceived += rv;
       }
-      buffer[bytesReceived+1] = '\0';
+      buffer[bytesReceived] = '\0';
       std::cout << buffer << "\n";
 
    } while (FALSE);
